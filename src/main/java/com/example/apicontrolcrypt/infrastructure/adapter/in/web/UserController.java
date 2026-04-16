@@ -8,6 +8,7 @@ import com.example.apicontrolcrypt.infrastructure.adapter.in.web.dto.UserRespons
 import com.example.apicontrolcrypt.infrastructure.adapter.in.web.mapper.UserRequestMapper;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class UserController {
 
     @PostMapping
     public ResponseEntity<UserResponse> createUser(@Valid @RequestBody CreateUserRequest request) {
+        log.info("Criando usuário: email={}", request.getEmail());
         User user = userUseCase.createUser(mapper.toDomain(request));
         return ResponseEntity.status(HttpStatus.CREATED).body(mapper.toResponse(user));
     }
@@ -39,6 +42,7 @@ public class UserController {
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<UserResponse>> getAllUsers() {
+        log.debug("Listando todos os usuários");
         List<UserResponse> users = userUseCase.getAllUsers().stream()
                 .map(mapper::toResponse)
                 .toList();
@@ -48,6 +52,7 @@ public class UserController {
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @userSecurity.isOwner(authentication, #id)")
     public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
+        log.debug("Buscando usuário: id={}", id);
         User user = userUseCase.getUserById(id);
         return ResponseEntity.ok(mapper.toResponse(user));
     }
@@ -56,6 +61,7 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN') or @userSecurity.isOwner(authentication, #id)")
     public ResponseEntity<UserResponse> updateUser(@PathVariable Long id,
                                                    @Valid @RequestBody UpdateUserRequest request) {
+        log.info("Atualizando usuário: id={}", id);
         User updated = userUseCase.updateUser(id, mapper.toDomain(request));
         return ResponseEntity.ok(mapper.toResponse(updated));
     }
@@ -63,6 +69,7 @@ public class UserController {
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
+        log.info("Deletando usuário: id={}", id);
         userUseCase.deleteUser(id);
         return ResponseEntity.noContent().build();
     }
