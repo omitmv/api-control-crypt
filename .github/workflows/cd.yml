@@ -1,0 +1,89 @@
+name: CD - Deploy to Azure Container Apps
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+    types:
+      - closed
+
+jobs:
+  deploy:
+    name: Build, Push and Deploy
+    runs-on: ubuntu-latest
+    # Only run when a PR is merged (not just closed)
+    if: github.event.pull_request.merged == true
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      REGISTRY: ${{ secrets.AZURE_REGISTRY_NAME }}.azurecr.io
+      IMAGE_NAME: api-control-crypt
+      RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      CONTAINER_APP_NAME: ${{ secrets.AZURE_CONTAINER_APP_NAME }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and test
+        run: mvn -B clean verify
+
+      - name: Log in to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Log in to Azure Container Registry
+        run: |
+          az acr login --name ${{ secrets.AZURE_REGISTRY_NAME }}
+
+      - name: Set image tag
+        id: meta
+        run: |
+          echo "TAG=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_OUTPUT
+          echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            --tag ${{ steps.meta.outputs.IMAGE }}:${{ steps.meta.outputs.TAG }} \
+            --tag ${{ steps.meta.outputs.IMAGE }}:latest \
+            .
+          docker push ${{ steps.meta.outputs.IMAGE }}:${{ steps.meta.outputs.TAG }}
+          docker push ${{ steps.meta.outputs.IMAGE }}:latest
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ steps.meta.outputs.IMAGE }}:${{ steps.meta.outputs.TAG }}
+
+      - name: Verify deployment
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+          APP_URL=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" \
+            --output tsv)
+          echo "Application URL: https://$APP_URL"
+          STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            "https://$APP_URL/actuator/health")
+          echo "Health check status: $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed with status $STATUS"
+            exit 1
+          fi
+          echo "Deployment verified successfully!"
