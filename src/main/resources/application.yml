@@ -29,6 +29,11 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  # CVE-2026-22733: Disable CloudFoundry-specific actuator endpoints (not used in this deployment).
+  # CVE-2026-22731: No health groups are configured; upgrade spring-boot-starter-parent to 3.5.11+
+  #                 when available to fully remediate the health-groups authentication bypass.
+  cloudfoundry:
+    enabled: false
 
 logging:
   level:
